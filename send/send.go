@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"strings"
 
@@ -10,68 +9,65 @@ import (
 	"github.com/go-stomp/stomp/frame"
 )
 
-var serverAddr = flag.String("server", "localhost:61613", "STOMP server.")
+var serverAddr = flag.String("server", "localhost:61613", "STOMP server")
 var message = flag.String("message", "", "Message to to sent")
 var queueName = flag.String("queue", "/queue/test", "Destination queue")
+var login = flag.String("login", "admin=admin", "login user=pwd credentials")
+var host = flag.String("host", "/", "host header")
 
-var options []func(*stomp.Conn) error = []func(*stomp.Conn) error{
-	stomp.ConnOpt.Login("admin", "admin"),
-	stomp.ConnOpt.Host("/"),
-}
 var headers headersFlags
 
 func main() {
-	flag.Var(&headers, "header", "Headers for message. Example JMSXGroupID:group1")
+	flag.Var(&headers, "header", "Headers for message. -header=\"CusomHeader=Value\"")
 	flag.Parse()
 	if *message == "" {
 		log.Fatal("Message required.")
 	}
-	headers.Set("persistent=true")
-	headers.Set("JMSXGroupID=queue1")
 
-	conn, err := stomp.Dial("tcp", *serverAddr, options...)
+	conn, err := stomp.Dial("tcp", *serverAddr, connOptions()...)
 	if err != nil {
 		log.Fatal("cannot connect to server", err.Error())
 	}
 
-	headers := headers.Get()
 	err = conn.Send(*queueName, "text/plain",
 		[]byte(*message),
-		//stomp.SendOpt.Header("CustomHeader1", "H1"),
-		//stomp.SendOpt.Header("CustomHeader2", "H2"),
-		//stomp.SendOpt.Header("persistent", "true"),
-		//stomp.SendOpt.Header("JMSXGroupID", "queue1"),
-		headers...,
+		headers.Get()...,
 	)
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Printf("sent message: %s \n", *message)
 	conn.Disconnect()
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-type headersFlags []header
+type connoptions []string
 
-type header struct {
-	Header string
-	Value  string
+func connOptions() []func(*stomp.Conn) error {
+	l := strings.Split(*login, "=")
+	if len(l) != 2 {
+		log.Fatalf("Expected connection option login: %s have format: user=pwd.", *login)
+	}
+	return []func(*stomp.Conn) error{
+		stomp.ConnOpt.Login(l[0], l[1]),
+		stomp.ConnOpt.Host(*host),
+	}
 }
+
+type headersFlags []string
 
 func (hf *headersFlags) Get() (r []func(*frame.Frame) error) {
 	for _, h := range *hf {
-		f := func(*frame.Frame) error {
-			return stomp.SendOpt.Header(h.Header, h.Value)
-		}
+		header := strings.Split(h, "=")
+		f := stomp.SendOpt.Header(header[0], header[1])
 		r = append(r, f)
 	}
-	return
-
+	return r
 }
-func (hf *headersFlags) String() string {
-	return "Headers for message."
+
+func (hf headersFlags) String() string {
+	return strings.Join(hf[:], ",")
 }
 
 func (hf *headersFlags) Set(value string) error {
@@ -79,6 +75,6 @@ func (hf *headersFlags) Set(value string) error {
 	if len(h) != 2 {
 		log.Fatalf("Expected header: %s have format: header1=value1.", value)
 	}
-	*hf = append(*hf, header{h[0], h[1]})
+	*hf = append(*hf, value)
 	return nil
 }
