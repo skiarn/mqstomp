@@ -42,8 +42,6 @@ func main() {
 	}
 }
 
-type connoptions []string
-
 func connOptions() []func(*stomp.Conn) error {
 	l := strings.Split(*login, "=")
 	if len(l) != 2 {
